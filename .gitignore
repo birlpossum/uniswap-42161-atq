@@ -1,0 +1,15 @@
+# Build and deps
+node_modules/
+dist/
+main.mjs
+# removed build artefacts
+.DS_Store
+
+# Local-only data and scripts
+scripts-local/
+data/
+
+# Environment variables
+.env
+.env.*
+!.env.example
