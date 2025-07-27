@@ -1,20 +1,16 @@
-// src/constants.mts
-export const PAGE = 1000; // subgraph max page size
+// src/constants.ts
+export const PAGE = 1000; // The Graph caps page size at 1 000
 
-// Canonical Uniswap-V3 subgraph deployment on Arbitrum One
-// same ID we discussed earlier: FbCGRf…Pe9aJM
+/**
+ * Canonical Uniswap-V3 subgraph on Arbitrum One
+ * Deployment ID: FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM
+ */
 export function endpoint(apiKey?: string): string {
-  // If no API key (or a placeholder like "dummy") is provided, fall back to the
-  // public The Graph endpoint that does **not** require authentication.  This
-  // keeps local and CI test runs from failing when a real key is unavailable.
+  // If CI or a dev machine runs with no real key, fall back to the public host.
   if (!apiKey || apiKey === "dummy") {
-    return "https://api.thegraph.com/subgraphs/id/FQ6JYszEKApsBpAmiHesRsd9Ygc6mzmpNRANeVQFYoVX";
+    return "https://api.thegraph.com/subgraphs/id/FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM";
   }
 
-  // Otherwise use the high-throughput gated endpoint that requires an API key.
-  return (
-    "https://gateway-arbitrum.network.thegraph.com/api/" +
-    apiKey +
-    "/subgraphs/id/FQ6JYszEKApsBpAmiHesRsd9Ygc6mzmpNRANeVQFYoVX"
-  );
+  // Preferred high-throughput gateway that requires an API key.
+  return `https://gateway-arbitrum.network.thegraph.com/api/${apiKey}/subgraphs/id/FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM`;
 }
