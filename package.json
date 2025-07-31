@@ -10,7 +10,8 @@
     "test": "vitest"
   },
   "dependencies": {
-    "atq-types": "^1.1.5"
+    "atq-types": "^1.1.5",
+    "node-fetch": "^3.0.0"
   },
   "lint-staged": {
     "*.{ts,tsx,js,json}": "prettier --write"

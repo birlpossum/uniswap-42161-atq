@@ -1,6 +1,7 @@
 import { ContractTag } from "atq-types";
-import { endpoint, PAGE } from "./constants";
-import { POOL_QUERY } from "./query";
+import { endpoint, PAGE } from "./constants.js";
+import { POOL_QUERY } from "./query.js";
+import { cleanSymbol, buildTag } from "./utils.js";
 
 interface GraphResponse<T> {
   data: T;
@@ -30,6 +31,7 @@ export async function returnTags(
     throw new Error(`Unsupported Chain ID: ${chainId}.`);
 
   const tags: ContractTag[] = [];
+  const seen = new Set<string>();
   let skip = 0;
 
   while (true) {
@@ -37,15 +39,16 @@ export async function returnTags(
     if (pools.length === 0) break;
 
     for (const p of pools) {
-      if (!p.token0?.symbol || !p.token1?.symbol) continue;
+      const sym0 = cleanSymbol(p.token0.symbol);
+      const sym1 = cleanSymbol(p.token1.symbol);
+      const fee  = (p.feeTier / 10000).toFixed(2) + "%";
 
-      tags.push({
-        "Contract Address": p.id,
-        "Public Name Tag": `${p.token0.symbol}/${p.token1.symbol} ${(p.feeTier / 10000).toFixed(2)}%`,
-        "Project Name": "Uniswap V3",
-        "UI/Website Link": "",
-        "Public Note": "",
-      });
+      if (seen.has(p.id)) continue;          // drop duplicate address
+      const tag = buildTag(p.id, sym0, sym1, fee);
+      if (!tag) continue;                    // skip invalid/blank/overlong
+
+      seen.add(p.id);
+      tags.push(tag);
     }
     skip += PAGE;
   }
