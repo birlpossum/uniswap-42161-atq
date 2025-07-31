@@ -31,7 +31,8 @@ export async function returnTags(
     throw new Error(`Unsupported Chain ID: ${chainId}.`);
 
   const tags: ContractTag[] = [];
-  const seen = new Set<string>();
+  const seenAddr  = new Set<string>();
+  const seenLabel = new Set<string>();
   let skip = 0;
 
   while (true) {
@@ -43,11 +44,21 @@ export async function returnTags(
       const sym1 = cleanSymbol(p.token1.symbol);
       const fee  = (p.feeTier / 10000).toFixed(2) + "%";
 
-      if (seen.has(p.id)) continue;          // drop duplicate address
-      const tag = buildTag(p.id, sym0, sym1, fee);
-      if (!tag) continue;                    // skip invalid/blank/overlong
+      if (seenAddr.has(p.id)) continue;
 
-      seen.add(p.id);
+      // 1️⃣ try plain label
+      let tag = buildTag(p.id, sym0, sym1, fee, false);
+      if (!tag) continue;
+
+      const key = `${tag["Project Name"]}|${tag["Public Name Tag"]}`;
+
+      // 2️⃣ if collision, rebuild with suffix
+      if (seenLabel.has(key)) {
+        tag = buildTag(p.id, sym0, sym1, fee, true)!;
+      }
+
+      seenAddr.add(p.id);
+      seenLabel.add(`${tag["Project Name"]}|${tag["Public Name Tag"]}`);
       tags.push(tag);
     }
     skip += PAGE;
