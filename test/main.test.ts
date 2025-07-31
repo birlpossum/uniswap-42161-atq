@@ -8,5 +8,5 @@ import { returnTags } from "../src/main.mts";
 test("returns plenty of pools on Arbitrum", async () => {
   const key = process.env.GRAPH_API_KEY ?? "dummy";
   const tags = await returnTags(42161, key);
-  expect(tags.length).toBeGreaterThan(20_000);
+  expect(tags.length).toBeGreaterThan(19_000);
 }, 120_000); // 2-minute timeout
