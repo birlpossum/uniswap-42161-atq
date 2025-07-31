@@ -23,16 +23,16 @@ export function buildTag(
   if (!sym0 || !sym1) return null;
 
   const base = `${sym0}/${sym1} ${fee}`;
-  const suffix = addSuffix ? ` #${address.slice(-4)}` : "";
+  const suffix = addSuffix ? `-${address.slice(-4)}` : "";
   const name = base + suffix;
 
-  if (name.length > 128) return null;
+  if (name.length > 50) return null;
 
   return {
     "Contract Address": address,
     "Public Name Tag": name,
     "Project Name": "Uniswap V3",
-    "UI/Website Link": `https://app.uniswap.org/#/pools/${address}`,
+    "UI/Website Link": `https://app.uniswap.org/explore/pools/arbitrum/${address}`,
     "Public Note": `Liquidity-pool contract for ${sym0}/${sym1} (fee ${fee}).`,
   };
 }
