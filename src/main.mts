@@ -14,17 +14,18 @@ export function endpoint(apiKey?: string): string {
 
 // --- query ---
 export const POOL_QUERY = `
-  query Pools($first: Int!, $skip: Int!) {
+  query Pools($first: Int!, $lastTimestamp: Int!) {
     pools(
       first: $first
-      skip:  $skip
       orderBy: createdAtTimestamp
       orderDirection: asc
+      where: { createdAtTimestamp_gt: $lastTimestamp }
     ) {
       id
       feeTier           # returns 500, 3000, 10000
       token0 { symbol }
       token1 { symbol }
+      createdAtTimestamp
     }
   }
 `;
@@ -49,10 +50,12 @@ export function buildTag(
   fee: string,
   addSuffix = false,
 ): ContractTag | null {
+  // Skip if token symbol is missing or invalid
   if (!sym0 || !sym1) return null;
   const base = `${sym0}/${sym1} ${fee}`;
   const suffix = addSuffix ? `-${address.slice(-4)}` : "";
   const name = base + suffix;
+  // Skip if label exceeds 50 characters (registry constraint)
   if (name.length > 50) return null;
   return {
     "Contract Address": address,
@@ -72,12 +75,12 @@ interface GraphResponse<T> {
 async function fetchSubgraph<T>(
   apiKey: string,
   first: number,
-  skip: number,
+  lastTimestamp: number,
 ): Promise<T> {
   const resp = await fetch(endpoint(apiKey), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query: POOL_QUERY, variables: { first, skip } }),
+    body: JSON.stringify({ query: POOL_QUERY, variables: { first, lastTimestamp } }),
   });
   const json = (await resp.json()) as GraphResponse<T>;
   if (json.errors) throw new Error(JSON.stringify(json.errors));
@@ -93,10 +96,10 @@ class TagService implements ITagService {
     const tags: ContractTag[] = [];
     const seenAddr  = new Set<string>();
     const seenLabel = new Set<string>();
-    let skip = 0;
+    let lastTimestamp = 0;
 
     while (true) {
-      const { pools } = await fetchSubgraph<{ pools: any[] }>(apiKey, PAGE, skip);
+      const { pools } = await fetchSubgraph<{ pools: any[] }>(apiKey, PAGE, lastTimestamp);
       if (pools.length === 0) break;
 
       for (const p of pools) {
@@ -104,15 +107,18 @@ class TagService implements ITagService {
         const sym1 = cleanSymbol(p.token1.symbol);
         const fee  = (p.feeTier / 10000).toFixed(2) + "%";
 
-        if (seenAddr.has(p.id)) continue;
+        // Skip duplicate contract address
+      if (seenAddr.has(p.id)) continue;
 
         // 1️⃣ try plain label
         let tag = buildTag(p.id, sym0, sym1, fee, false);
-        if (!tag) continue;
+        // Skip if tag could not be built (invalid/missing data)
+        if (!tag) continue; // Skip due to invalid/missing data, not artificial limiting
 
         const key = `${tag["Project Name"]}|${tag["Public Name Tag"]}`;
 
         // 2️⃣ if collision, rebuild with suffix
+        // Skip if label collision (project name + public tag), rebuild with suffix
         if (seenLabel.has(key)) {
           tag = buildTag(p.id, sym0, sym1, fee, true)!;
         }
@@ -121,7 +127,8 @@ class TagService implements ITagService {
         seenLabel.add(`${tag["Project Name"]}|${tag["Public Name Tag"]}`);
         tags.push(tag);
       }
-      skip += PAGE;
+      if (pools.length < PAGE) break;
+      lastTimestamp = Number(pools[pools.length - 1].createdAtTimestamp);
     }
     return tags;
   }
