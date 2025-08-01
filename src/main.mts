@@ -88,7 +88,7 @@ export async function returnTags(
   chainId: number,
   apiKey: string,
 ): Promise<ContractTag[]> {
-  if (chainId !== 42161)
+  if (Number(chainId) !== 42161)
     throw new Error(`Unsupported Chain ID: ${chainId}.`);
 
   const tags: ContractTag[] = [];
