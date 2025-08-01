@@ -1,3 +1,4 @@
+import fetch from "node-fetch";
 import { ContractTag, ITagService } from "atq-types";
 // --- constants ---
 export const PAGE = 1000; // The Graph caps page size at 1 000
@@ -13,7 +14,7 @@ export function endpoint(apiKey?: string): string {
 }
 
 // --- query ---
-export const POOL_QUERY = `
+const POOL_QUERY = `
   query Pools($first: Int!, $lastTimestamp: Int!) {
     pools(
       first: $first
@@ -30,6 +31,22 @@ export const POOL_QUERY = `
   }
 `;
 
+const headers: Record<string, string> = {
+  "Content-Type": "application/json",
+  Accept: "application/json",
+};
+
+function containsHtmlOrMarkdown(text: string): boolean {
+  return /<[^>]+>/.test(text);
+}
+
+function truncateString(text: string, maxLength: number) {
+  if (text.length > maxLength) {
+    return text.substring(0, maxLength - 3) + "...";
+  }
+  return text;
+}
+
 // --- utils ---
 /** Decode 32-byte hex (with/without 0x) → printable ASCII, strip junk */
 export function cleanSymbol(raw: string): string {
@@ -42,30 +59,35 @@ export function cleanSymbol(raw: string): string {
   const txt = raw.replace(/[^\u0002-\u007f]/g, "").trim(); // printable ASCII
   return txt.length >= 2 && txt.length <= 32 ? txt : "";
 }
-/** Build a tag; caller decides whether to add a uniqueness suffix */
-export function buildTag(
-  address: string,
-  sym0: string,
-  sym1: string,
-  fee: string,
-  chainId: string,
-  addSuffix = false,
-): ContractTag | null {
-  // Skip if token symbol is missing or invalid
-  if (!sym0 || !sym1) return null;
-  const base = `${sym0}/${sym1} ${fee}`;
-  const suffix = addSuffix ? `-${address.slice(-4)}` : "";
-  const name = base + suffix;
-  // Skip if label exceeds 50 characters (registry constraint)
-  if (name.length > 50) return null;
-  return {
-    "Contract Address": `eip155:${chainId}:${address}`,
-    "Public Name Tag": name,
-    "Project Name": "Uniswap v3",
-    "UI/Website Link": "https://uniswap.org",
-    "Public Note": `The liquidity pool contract on Uniswap v3 for ${sym0}/${sym1} (fee ${fee}).`,
-  };
+/**
+ * Transform pools into ContractTag objects, applying policy and field validation.
+ */
+function transformPoolsToTags(chainId: string, pools: any[]): ContractTag[] {
+  const validPools: any[] = [];
+  pools.forEach((p) => {
+    const fee = (p.feeTier / 10000).toFixed(2) + "%";
+    const poolSymbolInvalid = containsHtmlOrMarkdown(p.token0.symbol) || containsHtmlOrMarkdown(p.token1.symbol) || !p.token0.symbol || !p.token1.symbol;
+    if (poolSymbolInvalid) {
+      console.log("Pool rejected due to HTML content in token symbol: " + JSON.stringify(p));
+    } else {
+      validPools.push(p);
+    }
+  });
+  return validPools.map((p) => {
+    const maxSymbolsLength = 45;
+    const sym0 = truncateString(p.token0.symbol, maxSymbolsLength);
+    const sym1 = truncateString(p.token1.symbol, maxSymbolsLength);
+    const fee = (p.feeTier / 10000).toFixed(2) + "%";
+    return {
+      "Contract Address": `eip155:${chainId}:${p.id}`,
+      "Public Name Tag": `${sym0}/${sym1} ${fee}`,
+      "Project Name": "Uniswap v3",
+      "UI/Website Link": "https://uniswap.org",
+      "Public Note": `The liquidity pool contract on Uniswap v3 for ${sym0}/${sym1} (fee ${fee}).`,
+    };
+  });
 }
+
 
 // --- main logic ---
 interface GraphResponse<T> {
@@ -73,58 +95,71 @@ interface GraphResponse<T> {
   errors?: unknown;
 }
 
-async function fetchSubgraph<T>(
-  apiKey: string,
-  first: number,
-  lastTimestamp: number,
-): Promise<T> {
+async function fetchPools(apiKey: string, lastTimestamp: number): Promise<any[]> {
   const resp = await fetch(endpoint(apiKey), {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query: POOL_QUERY, variables: { first, lastTimestamp } }),
+    headers,
+    body: JSON.stringify({ query: POOL_QUERY, variables: { first: PAGE, lastTimestamp } }),
   });
-  const json = (await resp.json()) as GraphResponse<T>;
-  if (json.errors) throw new Error(JSON.stringify(json.errors));
-  return json.data;
+  if (!resp.ok) {
+    throw new Error(`HTTP error: ${resp.status}`);
+  }
+  const json = (await resp.json()) as {
+    data?: { pools: any[] };
+    errors?: { message: string }[];
+  };
+  if (json.errors) {
+    json.errors.forEach((error) => {
+      console.error(`GraphQL error: ${error.message}`);
+    });
+    throw new Error("GraphQL errors occurred: see logs for details.");
+  }
+  if (!json.data || !json.data.pools) {
+    throw new Error("No pools data found.");
+  }
+  return json.data.pools;
 }
 
+
 class TagService implements ITagService {
-  async returnTags(chainId: string, apiKey: string | null): Promise<ContractTag[]> {
+  returnTags = async (
+    chainId: string,
+    apiKey: string
+  ): Promise<ContractTag[]> => {
     if (Number(chainId) !== 42161)
       throw new Error(`Unsupported Chain ID: ${chainId}.`);
     if (!apiKey) throw new Error("API key is required");
-
-    const tags: ContractTag[] = [];
-    const seenAddr  = new Set<string>();
-    const seenLabel = new Set<string>();
     let lastTimestamp = 0;
-
+    const tags: ContractTag[] = [];
+    const seenAddr = new Set<string>();
     while (true) {
-      const { pools } = await fetchSubgraph<{ pools: any[] }>(apiKey, PAGE, lastTimestamp);
+      let pools: any[];
+      try {
+        pools = await fetchPools(apiKey, lastTimestamp);
+      } catch (error) {
+        if (error instanceof Error) {
+          console.error(`An error occurred: ${error.message}`);
+          throw new Error(`Failed fetching data: ${error}`);
+        } else {
+          console.error("An unknown error occurred.");
+          throw new Error("An unknown error occurred during fetch operation.");
+        }
+      }
       if (pools.length === 0) break;
-
       // Policy change effective August 1, 2025: No longer required to ensure unique Project+Public Name Tag submissions, provided Contract Address is unique and all other fields are compliant.
       for (const p of pools) {
-        const sym0 = cleanSymbol(p.token0.symbol);
-        const sym1 = cleanSymbol(p.token1.symbol);
-        const fee  = (p.feeTier / 10000).toFixed(2) + "%";
-
-        // Only skip duplicate contract address
         if (seenAddr.has(p.id)) continue;
-
-        let tag = buildTag(p.id, sym0, sym1, fee, chainId, false);
-        // Skip if tag could not be built (invalid/missing data)
-        if (!tag) continue;
-
+        const tagsForPool = transformPoolsToTags(chainId, [p]);
+        if (tagsForPool.length === 0) continue;
         seenAddr.add(p.id);
-        tags.push(tag);
+        tags.push(...tagsForPool);
       }
       if (pools.length < PAGE) break;
       lastTimestamp = Number(pools[pools.length - 1].createdAtTimestamp);
     }
     return tags;
-  }
+  };
 }
 
 const tagService = new TagService();
-export const returnTags = tagService.returnTags.bind(tagService);
+export const returnTags = tagService.returnTags;
