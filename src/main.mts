@@ -48,6 +48,7 @@ export function buildTag(
   sym0: string,
   sym1: string,
   fee: string,
+  chainId: string,
   addSuffix = false,
 ): ContractTag | null {
   // Skip if token symbol is missing or invalid
@@ -58,7 +59,7 @@ export function buildTag(
   // Skip if label exceeds 50 characters (registry constraint)
   if (name.length > 50) return null;
   return {
-    "Contract Address": address,
+    "Contract Address": `eip155:${chainId}:${address}`,
     "Public Name Tag": name,
     "Project Name": "Uniswap v3",
     "UI/Website Link": "https://uniswap.org",
@@ -102,29 +103,20 @@ class TagService implements ITagService {
       const { pools } = await fetchSubgraph<{ pools: any[] }>(apiKey, PAGE, lastTimestamp);
       if (pools.length === 0) break;
 
+      // Policy change effective August 1, 2025: No longer required to ensure unique Project+Public Name Tag submissions, provided Contract Address is unique and all other fields are compliant.
       for (const p of pools) {
         const sym0 = cleanSymbol(p.token0.symbol);
         const sym1 = cleanSymbol(p.token1.symbol);
         const fee  = (p.feeTier / 10000).toFixed(2) + "%";
 
-        // Skip duplicate contract address
-      if (seenAddr.has(p.id)) continue;
+        // Only skip duplicate contract address
+        if (seenAddr.has(p.id)) continue;
 
-        // 1️⃣ try plain label
-        let tag = buildTag(p.id, sym0, sym1, fee, false);
+        let tag = buildTag(p.id, sym0, sym1, fee, chainId, false);
         // Skip if tag could not be built (invalid/missing data)
-        if (!tag) continue; // Skip due to invalid/missing data, not artificial limiting
-
-        const key = `${tag["Project Name"]}|${tag["Public Name Tag"]}`;
-
-        // 2️⃣ if collision, rebuild with suffix
-        // Skip if label collision (project name + public tag), rebuild with suffix
-        if (seenLabel.has(key)) {
-          tag = buildTag(p.id, sym0, sym1, fee, true)!;
-        }
+        if (!tag) continue;
 
         seenAddr.add(p.id);
-        seenLabel.add(`${tag["Project Name"]}|${tag["Public Name Tag"]}`);
         tags.push(tag);
       }
       if (pools.length < PAGE) break;
