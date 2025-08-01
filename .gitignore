@@ -2,7 +2,7 @@
 node_modules/
 dist/
 main.mjs
-/_dev/
+_dev/
 /uniswap-arb-tags.csv
 
 # removed build artefacts
@@ -12,6 +12,7 @@ main.mjs
 scripts-local/
 data/
 readme.md
+tsconfig.local.json
 
 # Environment variables
 .env
