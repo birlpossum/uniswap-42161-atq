@@ -17,3 +17,7 @@ readme.md
 .env
 .env.*
 !.env.example_dev/
+
+# CI
+.github/
+.husky/
