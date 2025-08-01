@@ -1,8 +1,69 @@
 import { ContractTag } from "atq-types";
-import { endpoint, PAGE } from "./constants.js";
-import { POOL_QUERY } from "./query.js";
-import { cleanSymbol, buildTag } from "./utils.js";
+// --- constants ---
+export const PAGE = 1000; // The Graph caps page size at 1 000
+/**
+ * Canonical Uniswap-V3 subgraph on Arbitrum One
+ * Deployment ID: FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM
+ */
+export function endpoint(apiKey?: string): string {
+  if (!apiKey || apiKey === "dummy") {
+    return "https://api.thegraph.com/subgraphs/id/FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM";
+  }
+  return `https://gateway-arbitrum.network.thegraph.com/api/${apiKey}/subgraphs/id/FbCGRftH4a3yZugY7TnbYgPJVEv2LvMT6oF1fxPe9aJM`;
+}
 
+// --- query ---
+export const POOL_QUERY = `
+  query Pools($first: Int!, $skip: Int!) {
+    pools(
+      first: $first
+      skip:  $skip
+      orderBy: createdAtTimestamp
+      orderDirection: asc
+    ) {
+      id
+      feeTier           # returns 500, 3000, 10000
+      token0 { symbol }
+      token1 { symbol }
+    }
+  }
+`;
+
+// --- utils ---
+/** Decode 32-byte hex (with/without 0x) → printable ASCII, strip junk */
+export function cleanSymbol(raw: string): string {
+  const hex = raw.startsWith("0x") ? raw.slice(2) : raw;
+  if (/^[0-9a-fA-F]{64}$/.test(hex)) {
+    raw = Buffer.from(hex, "hex")
+      .toString("utf8")
+      .replace(/\u0000/g, "");
+  }
+  const txt = raw.replace(/[^\u0002-\u007f]/g, "").trim(); // printable ASCII
+  return txt.length >= 2 && txt.length <= 32 ? txt : "";
+}
+/** Build a tag; caller decides whether to add a uniqueness suffix */
+export function buildTag(
+  address: string,
+  sym0: string,
+  sym1: string,
+  fee: string,
+  addSuffix = false,
+): ContractTag | null {
+  if (!sym0 || !sym1) return null;
+  const base = `${sym0}/${sym1} ${fee}`;
+  const suffix = addSuffix ? `-${address.slice(-4)}` : "";
+  const name = base + suffix;
+  if (name.length > 50) return null;
+  return {
+    "Contract Address": address,
+    "Public Name Tag": name,
+    "Project Name": "Uniswap V3",
+    "UI/Website Link": `https://app.uniswap.org/explore/pools/arbitrum/${address}`,
+    "Public Note": `Liquidity-pool contract for ${sym0}/${sym1} (fee ${fee}).`,
+  };
+}
+
+// --- main logic ---
 interface GraphResponse<T> {
   data: T;
   errors?: unknown;
