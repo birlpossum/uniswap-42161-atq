@@ -57,9 +57,9 @@ export function buildTag(
   return {
     "Contract Address": address,
     "Public Name Tag": name,
-    "Project Name": "Uniswap V3",
-    "UI/Website Link": `https://app.uniswap.org/explore/pools/arbitrum/${address}`,
-    "Public Note": `Liquidity-pool contract for ${sym0}/${sym1} (fee ${fee}).`,
+    "Project Name": "Uniswap v3",
+    "UI/Website Link": "https://uniswap.org",
+    "Public Note": `The liquidity pool contract on Uniswap v3 for ${sym0}/${sym1} (fee ${fee}).`,
   };
 }
 
