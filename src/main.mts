@@ -1,4 +1,4 @@
-import { ContractTag } from "atq-types";
+import { ContractTag, ITagService } from "atq-types";
 // --- constants ---
 export const PAGE = 1000; // The Graph caps page size at 1 000
 /**
@@ -84,45 +84,48 @@ async function fetchSubgraph<T>(
   return json.data;
 }
 
-export async function returnTags(
-  chainId: number,
-  apiKey: string,
-): Promise<ContractTag[]> {
-  if (Number(chainId) !== 42161)
-    throw new Error(`Unsupported Chain ID: ${chainId}.`);
+class TagService implements ITagService {
+  async returnTags(chainId: string, apiKey: string | null): Promise<ContractTag[]> {
+    if (Number(chainId) !== 42161)
+      throw new Error(`Unsupported Chain ID: ${chainId}.`);
+    if (!apiKey) throw new Error("API key is required");
 
-  const tags: ContractTag[] = [];
-  const seenAddr  = new Set<string>();
-  const seenLabel = new Set<string>();
-  let skip = 0;
+    const tags: ContractTag[] = [];
+    const seenAddr  = new Set<string>();
+    const seenLabel = new Set<string>();
+    let skip = 0;
 
-  while (true) {
-    const { pools } = await fetchSubgraph<{ pools: any[] }>(apiKey, PAGE, skip);
-    if (pools.length === 0) break;
+    while (true) {
+      const { pools } = await fetchSubgraph<{ pools: any[] }>(apiKey, PAGE, skip);
+      if (pools.length === 0) break;
 
-    for (const p of pools) {
-      const sym0 = cleanSymbol(p.token0.symbol);
-      const sym1 = cleanSymbol(p.token1.symbol);
-      const fee  = (p.feeTier / 10000).toFixed(2) + "%";
+      for (const p of pools) {
+        const sym0 = cleanSymbol(p.token0.symbol);
+        const sym1 = cleanSymbol(p.token1.symbol);
+        const fee  = (p.feeTier / 10000).toFixed(2) + "%";
 
-      if (seenAddr.has(p.id)) continue;
+        if (seenAddr.has(p.id)) continue;
 
-      // 1️⃣ try plain label
-      let tag = buildTag(p.id, sym0, sym1, fee, false);
-      if (!tag) continue;
+        // 1️⃣ try plain label
+        let tag = buildTag(p.id, sym0, sym1, fee, false);
+        if (!tag) continue;
 
-      const key = `${tag["Project Name"]}|${tag["Public Name Tag"]}`;
+        const key = `${tag["Project Name"]}|${tag["Public Name Tag"]}`;
 
-      // 2️⃣ if collision, rebuild with suffix
-      if (seenLabel.has(key)) {
-        tag = buildTag(p.id, sym0, sym1, fee, true)!;
+        // 2️⃣ if collision, rebuild with suffix
+        if (seenLabel.has(key)) {
+          tag = buildTag(p.id, sym0, sym1, fee, true)!;
+        }
+
+        seenAddr.add(p.id);
+        seenLabel.add(`${tag["Project Name"]}|${tag["Public Name Tag"]}`);
+        tags.push(tag);
       }
-
-      seenAddr.add(p.id);
-      seenLabel.add(`${tag["Project Name"]}|${tag["Public Name Tag"]}`);
-      tags.push(tag);
+      skip += PAGE;
     }
-    skip += PAGE;
+    return tags;
   }
-  return tags;
 }
+
+const tagService = new TagService();
+export const returnTags = tagService.returnTags.bind(tagService);
